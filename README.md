@@ -1,4 +1,4 @@
 # PtiChat
 Projet C#
 
-Hey mate it's Kasra
+Hey mate it's Kasra. No it's not.
