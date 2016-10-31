@@ -5,10 +5,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using WpfApplication2;
 
 namespace WpfApplication2.ViewModel
 {
@@ -26,22 +28,36 @@ namespace WpfApplication2.ViewModel
     /// </summary>
     public class MainViewModel : ViewModelBase
     {
-        public Dictionary<string, List<Message>> ConversationMsg { get; set; } = new Dictionary<string, List<Message>>();
-        public ConcurrentQueue<Message> ToSend { get; set; } = new ConcurrentQueue<Message>();
+        public string Name { get; private set; }
+        public string WelcomeMsg { get; private set; }
+        private readonly object verrou = new object();
+        private readonly object verrou2 = new object();
 
-        public sealed class ObservableClient : ObservableObject
+        public Client client { get; set; } = new Client();
+
+        /*public sealed class ObservableClient : ObservableObject
         {
             private string name;
             public string Name { get { return name; } set { Set(() => Name, ref name, value); } }
 
-            private bool hasSentANewMessage = true;
+            private bool hasSentANewMessage = false;
             public bool HasSentANewMessage { get { return hasSentANewMessage; } set { Set(() => HasSentANewMessage, ref hasSentANewMessage, value); } }
+        }*/
+
+        public sealed class ObservableClient
+        {
+            private string name;
+            public string Name { get { return name; } set { name = value; } }
+
+            private bool hasSentANewMessage = false;
+            public bool HasSentANewMessage { get { return hasSentANewMessage; } set { hasSentANewMessage = value; } }
         }
 
-        public string Name { get; private set; }
-        public string WelcomeMsg { get; private set; }
+        //private List<ObservableClient> connectedUsers = new List<ObservableClient>();
+        //public List<ObservableClient> ConnectedUsers { get { return connectedUsers; } set { Console.WriteLine("setting ConnectedUsers"); connectedUsers = value; RaisePropertyChanged();  } }
+        private ObservableCollection<ObservableClient> connectedUsers = new ObservableCollection<ObservableClient>();
+        public ObservableCollection<ObservableClient> ConnectedUsers { get { return connectedUsers; } set { Console.WriteLine("setting ConnectedUsers"); connectedUsers = value; /*RaisePropertyChanged();*/ } }
 
-        public List<ObservableClient> ConnectedUsers { get; set; } = new List<ObservableClient>();
         private ObservableClient currentInterlocutor = new ObservableClient();
         public ObservableClient CurrentInterlocutor
         {
@@ -51,37 +67,68 @@ namespace WpfApplication2.ViewModel
             }
             set
             {
-                currentInterlocutor = value;
-                ConnectedUsers.Find(i => i.Name == currentInterlocutor.Name).HasSentANewMessage = false;
+                if (value != null)
+                {
+                    currentInterlocutor = value;
+                    ConnectedUsers.Single(i => i.Name == currentInterlocutor.Name).HasSentANewMessage = false;
+                    CurrentMsgList.Clear();
+                    var list = new List<Message>();
+                    if (client.ExchangedMessages.TryGetValue(currentInterlocutor.Name, out list))
+                    {
+                        //list.ForEach(x => { CurrentMsgList.Add(new ObservableMessage { Body = x.Body, Target = x.Target }); });
+                        //list.ForEach(x => { CurrentMsgList.Add(new Message { Body = x.Body, Target = x.Target }); });
+                        list.ForEach(x => { CurrentMsgList.Add(x); });
+                        Console.WriteLine(CurrentMsgList.Count);
+                    }
+                    Console.WriteLine(currentInterlocutor.Name);
+                }
+                
             }
         }
 
-        public sealed class ObservableMessage : ObservableObject
+        /*public sealed class ObservableMessage : ObservableObject
         {
             private string body;
             public string Body { get { return body; } set { Set(() => Body, ref body, value); } }
 
-            private string sender;
-            public string Sender { get { return sender; } set { Set(() => Sender, ref sender, value); } }
-        }
+            private string target;
+            public string Target { get { return target; } set { Set(() => Target, ref target, value); } }
+        }*/
 
-        public List<ObservableMessage> CurrentMsgList { get; set; } = new List<ObservableMessage>();
+        /*private List<ObservableMessage> currentMsgList = new List<ObservableMessage>();
+        public List<ObservableMessage> CurrentMsgList { get { return currentMsgList; } set { currentMsgList = value; RaisePropertyChanged(); } } */
+
+        //public ObservableCollection<ObservableMessage> CurrentMsgList { get; set; } = new ObservableCollection<ObservableMessage>();
+        public ObservableCollection<Message> CurrentMsgList { get; set; } = new ObservableCollection<Message>();
+
         private Message currentMsg { get; set; } = new Message();
         public Message CurrentMsg
         {
             get { return currentMsg; }
             set
             {
-                currentMsg = value;
-                //RaisePropertyChanged();
-                //Console.WriteLine(CurrentMsg.Body);
-                Console.WriteLine("changed current Msg ?");
+                if (value.Body != "")
+                {
+                    currentMsg = value;
+                    currentMsg.Sender = Name;
+                    currentMsg.Target = CurrentInterlocutor.Name;
+                    //currentMsg.Target = "kasra";
+                    currentMsg.SendTime = DateTime.Now.ToShortDateString();
+                    Console.WriteLine("changed current Msg ? : " + value.Body + " And Target is : " + currentMsg.Target);
+                    var list = new List<Message>();
+                    if(client.ExchangedMessages.TryGetValue(CurrentInterlocutor.Name, out list)) {
+                        list.Add(currentMsg);
+                    }
+                    CurrentMsgList.Add(new Message { Body = value.Body, Target = value.Target });
+                    client.MessagesToSend.Enqueue(currentMsg);
+                    
+                }
+
+
             }
         }
 
-        //private string currentMsgBody;
-        //public string CurrentMsgBody { get { return currentMsgBody; } set { currentMsgBody = value; Console.WriteLine("changed current message body"); CurrentMsg.Body = value; Console.WriteLine(CurrentMsg.Body); } }
-
+       
         /// <summary>
         /// Initializes a new instance of the MainViewModel class.
         /// </summary>
@@ -96,54 +143,46 @@ namespace WpfApplication2.ViewModel
             ////    // Code runs "for real"
             ////}
 
-            
+            BindingOperations.EnableCollectionSynchronization(ConnectedUsers, verrou);
+            BindingOperations.EnableCollectionSynchronization(CurrentMsgList, verrou2);
 
-            Name = "John";
+            Name = "Choroncos";
             WelcomeMsg = $"Bienvenue sur PtiChat, {Name}";
-            Client client = new Client();
 
-            client.ReceivedMessage += Client_ReceivedMessage;
-            client.OnReceivedMessage();
-            client.OnReceivedMessage();
 
             client.NewConnectedCustomer += Client_NewConnectedCustomer;
-            client.OnNewConnectedCustomer("Jack");
+            /*client.OnNewConnectedCustomer("Jack");
             client.OnNewConnectedCustomer("Averell");
-            client.OnNewConnectedCustomer("Joe");
+            client.OnNewConnectedCustomer("Joe");*/
 
-            //Console.WriteLine(CurrentMsgList[0]);
-            //Console.WriteLine(CurrentMsgList.CurrentMsg.Body);
+            client.ReceivedMessage += Client_ReceivedMessage;
+            /*client.OnReceivedMessage("Message pour Averell", "Averell");
+            client.OnReceivedMessage("Message pour Joe", "Joe");
+            client.OnReceivedMessage("Message pour Averell 2", "Averell");*/
 
-            //CurrentMsg.PrpertyChanged += MainViewModel_PrpertyChanged;
+
 
         }
 
-        /*private void MainViewModel_PrpertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            ExecuteSendMessageCommand();
-        }*/
-
-
         private void Client_ReceivedMessage(object sender, Client.MessageEventArgs e)
         {
-            CurrentMsgList.Add(new ObservableMessage { Body = e.MessageContent });
+            
+            if (CurrentInterlocutor.Name == e.Target)
+            {
+                CurrentMsgList.Add(new Message { Body = e.MessageContent, Target = e.Target });
+            } else
+            {
+               ConnectedUsers.Single(i => i.Name == e.Target).HasSentANewMessage = true;
+            }
+
         }
 
         private void Client_NewConnectedCustomer(object sender, Client.UserEventArgs e)
         {
-            ConnectedUsers.Add(new ObservableClient { Name = e.UserName });
+            ConnectedUsers.Clear();
+            client.ConnectedUsers.ForEach(x => { ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true }); });           
+            Console.WriteLine(ConnectedUsers.Count);
         }
-
-        /*public void ExecuteSendMessageCommand () {
-            Console.WriteLine($"Le message courant est : {CurrentMsg.Body}");
-            if (CurrentMsg.Body != "")
-            {
-                CurrentMsgList.Add(CurrentMsg.Body);
-            }
-            CurrentMsg.Body = "";
-        }*/
-
-
 
     }
 }

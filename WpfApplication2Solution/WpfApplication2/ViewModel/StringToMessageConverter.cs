@@ -12,22 +12,27 @@ namespace WpfApplication2.ViewModel
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            Console.WriteLine("Converter ?");
-            //throw new NotImplementedException();
-            String str = value as string;
-            if (str == null)
-            {
-                return null;
-            } else
-            {
-                Console.WriteLine("  fijhgvjfdnbv");
-                return new Message { Body = str };
-            }
+            //Console.WriteLine("convertBack");
+            throw new NotImplementedException();
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         {
-            throw new NotImplementedException();
+            
+
+            //Console.WriteLine("Converter ?");
+            //throw new NotImplementedException();
+            String str = value as string;
+            if (str == null)
+            {
+                //Console.WriteLine("Converter ? Null");
+                return null;
+            }
+            else
+            {
+                //Console.WriteLine("Converter ? Not Null");
+                return new Message { Body = str, Sender = (string)parameter };
+            }
         }
     }
 }

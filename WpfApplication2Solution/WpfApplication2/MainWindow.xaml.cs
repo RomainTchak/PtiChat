@@ -17,13 +17,14 @@ namespace WpfApplication2
         public MainWindow()
         {
             InitializeComponent();
+            
         }
 
         private void TextBox_KeyEnterUpdate(object sender, KeyEventArgs e)
         {           
             if (e.Key == Key.Enter)
             {
-                Console.WriteLine("enter");
+                //Console.WriteLine("enter");
                 UpdateTextBoxBinding(sender as TextBox);
                 KeepScrollDown();
             }           
@@ -31,7 +32,7 @@ namespace WpfApplication2
 
         private void button_send_Click(object sender, RoutedEventArgs e)
         {
-            Console.WriteLine("click");
+            //Console.WriteLine("click");
             UpdateTextBoxBinding(textBox_msg);
             KeepScrollDown();
             /*var dialog = new CommonOpenFileDialog();
@@ -45,17 +46,9 @@ namespace WpfApplication2
         {
             DependencyProperty prop = TextBox.TextProperty;
             BindingExpression binding = BindingOperations.GetBindingExpression(tBox, prop);
-            if (binding != null) { binding.UpdateSource(); Console.WriteLine("binding updated"); }
+            if (binding != null) { binding.UpdateSource(); }
+            tBox.Text = "";
 
-            /*DependencyProperty prop = TextBox.TextProperty;
-            var convertBinding = new Binding("test");
-            //visiblityBinding.Source = col;
-            convertBinding.Converter = new StringToMessageConverter();
-            BindingExpression binding = BindingOperations.SetBinding(tBox, prop, convertBinding);
-            if (binding != null)
-            {
-                binding.UpdateSource(); Console.WriteLine("binding updated");
-            }*/
         }
 
         private void KeepScrollDown ()

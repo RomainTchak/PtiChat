@@ -1,2 +1,0 @@
-# PtiChat
-Projet C#
