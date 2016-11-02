@@ -1,33 +1,91 @@
-﻿using System;
+﻿using GalaSoft.MvvmLight;
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Collections.Concurrent;
+using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using WpfApplication2.ViewModel;
 
-
-namespace PtiChatClient
+namespace WpfApplication2
 {
-    class Client
+    
+    public class Client
     {
-        string username;
+        public ConcurrentDictionary<string, List<Message>> ExchangedMessages { get; set; } = new ConcurrentDictionary<string, List<Message>>();
+        public ConcurrentQueue<Message> MessagesToSend { get; set; } = new ConcurrentQueue<Message>();
+        private List<string> connectedUsers = new List<string>();
+        public List<string> ConnectedUsers { get { return connectedUsers; } set { connectedUsers = value; OnNewConnectedCustomer(connectedUsers); } }
+
+        public void OnNewConnectedCustomer(List<string> list)
+        {
+            UserEventArgs UserEA = new UserEventArgs(list);
+            NewConnectedCustomer?.Invoke(this, UserEA);
+        }
+
+        public event EventHandler<UserEventArgs> NewConnectedCustomer;
+
+        public sealed class UserEventArgs : EventArgs
+        {
+            public List<string> UserNames { get; private set; }
+
+            public UserEventArgs (List<string> usernames)
+            {
+                UserNames = usernames;
+            }
+        }
+        
+
+        public void OnReceivedMessage (string msg, string target)
+        {
+            
+            var list = new List<Message>();
+            if (ExchangedMessages.TryGetValue(target, out list))
+            {
+                list.Add(new Message { Body = msg, Target = target});
+            }
+            MessageEventArgs MessageEA = new MessageEventArgs(msg, target);
+            ReceivedMessage?.Invoke(this, MessageEA);
+        }
+
+        public event EventHandler<MessageEventArgs> ReceivedMessage;
+
+        public sealed class MessageEventArgs : EventArgs
+        {
+            public string MessageContent { get; private set; }
+            public string Target { get; private set; }
+
+            public MessageEventArgs(string messageContent, string target)
+            {
+                MessageContent = messageContent;
+                Target = target;
+            }
+        }
+
+
+        //Import Client
+        public Client()
+        {
+            ExchangedMessages.TryAdd("Server", new List<Message>());
+            SocClient = new TcpClient();
+            //StartChat();
+
+        }
+
+        public string Username { get; set; }
         TcpClient SocClient;
         NetworkStream NS;
         BinaryReader BR;
         BinaryWriter BW;
         private Object myLock = new object();
-        public Client()
-        {
-            SocClient = new TcpClient();
-            //NS = SocClient.GetStream();
-            //BR = new BinaryReader(NS);
-            //BW = new BinaryWriter(NS);
-        }
-        void Envoyer(Message msg,ViewModel vm)
+        
+
+        void Envoyer(Message msg)
         {
             lock (myLock)
             {
@@ -35,20 +93,19 @@ namespace PtiChatClient
                 BW.Write((string)msg.Target);
                 BW.Write((string)msg.Body);
                 BW.Write((int)msg.FileSize);
-                if (msg.FileSize!=0)
+                if (msg.FileSize != 0)
                 {
                     //Si il y a un fichier à envoyer
                     BW.Write(msg.Attachment, 0, msg.Attachment.Length);
-                }                           
+                }
                 BW.Write((string)msg.FileName);
                 BW.Write((string)msg.SendTime);
                 BW.Write((string)msg.ReceiveTime);
                 //On constitue l'objet message à envoyer avec les élements fournis par l'utilisateur 
 
-                vm.ExchangedMessages[msg.Target].Add(msg);
-
             }
         }
+
         Message Recevoir()
         {
             Message ReceivedMessage = new Message();
@@ -96,6 +153,7 @@ namespace PtiChatClient
                 Stream file = File.OpenWrite(pathToFile);
                 file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
                 //On transforme le tableau d'octets en fichier
+                file.Close();
             }
             ReceivedMessage.Attachment = new byte[0];
             //On vide le tableau Attachment afin de libérer de l'espace sur le mémoire 
@@ -116,28 +174,19 @@ namespace PtiChatClient
 
             return ReceivedMessage;
         }
-        void EnvoiMessage(ViewModel vm)
+        void EnvoiMessage()
         {
             while (true)
             {
-                // ******** REACTIVER CETTE SECTION POUR FAIRE MARCHER LE PROGRAMME AVEC WPF **************
-                //while (vm.MessagesToSend.IsEmpty)
-                //{
 
-                //}
-                //Message msgToSend;
-                //vm.MessagesToSend.TryDequeue(out msgToSend);
+                while (MessagesToSend.IsEmpty)
+                {
 
-                // ****************************************************************************************
+                }
+                Message msgToSend;
+                MessagesToSend.TryDequeue(out msgToSend);
 
 
-                // ******** CETTE SECTION SERT JUSTE A TESTER LE PROGRAMME EN MODE CONSOLE ****************
-                Message msgToSend = new Message();
-                msgToSend.Body = Console.ReadLine();
-                msgToSend.Sender = this.username;
-                msgToSend.Target = vm.ConnectedUsers[0];
-                // ****************************************************************************************
-                
 
                 if (msgToSend.Body.Contains("@File"))
                 {
@@ -159,75 +208,71 @@ namespace PtiChatClient
                     //On envoie pas de fichier donc on envoie un tableau vide
                 }
                 msgToSend.SendTime = DateTime.Now.ToString();
-                this.Envoyer(msgToSend,vm);
+                this.Envoyer(msgToSend);
 
             }
         }
-        void ReceptionMessage(ViewModel vm)
+        void ReceptionMessage()
         {
+            List<Message> RemoveList = new List<Message>();
             while (true)
             {
                 while (!NS.DataAvailable)
                 {
                     //On attend qu'il y ait quelque chose sur le Stream
                 }
-                Message messageRecu=this.Recevoir();
+                Message messageRecu = this.Recevoir();
                 if (messageRecu.Sender == "Server")
                 {
                     List<string> connectedPeople = messageRecu.Body.Split(',').ToList();
-                    vm.ConnectedUsers = connectedPeople;
 
-                    foreach(string user in connectedPeople)
+                    ConnectedUsers = string.IsNullOrEmpty(connectedPeople[0]) ? new List<string>() : connectedPeople;
+
+                    foreach(string user in ExchangedMessages.Keys)
+                    {
+                        if (!ConnectedUsers.Contains(user))
+                        {
+                            List<string> ConversationList = new List<string>();
+                            foreach(Message messageToStore in ExchangedMessages[user])
+                            {
+                                ConversationList.Add($"<{messageToStore.SendTime}/><{messageToStore.Sender}/><{messageToStore.Body}/>");
+                            }
+                            File.AppendAllLines($"C:\\Users\\Kasi\\Desktop\\Conversation between {this.Username}&{user}.txt", ConversationList);
+
+                            ExchangedMessages.TryRemove(user, out RemoveList);
+
+                        }
+                    }
+                    //si un client se déconnecte (il n'est plus dans ConnectedUsers) on l'enlève du dictionnaire ExchangedMessages
+                    // et on stocke la discussion qu'on a eu avec lui dans un fichier txt
+
+
+                    foreach (string user in connectedPeople)
                     {
                         //on rajoute la conversation correspondant à chaque nouvel utilisateur dans le dictionnaire
                         //ExchangedMessages
-                        if (!(vm.ExchangedMessages.ContainsKey(user))) {
-                            vm.ExchangedMessages.TryAdd(user, new List<Message>());
+                        if (!(ExchangedMessages.ContainsKey(user)))
+                        {
+                            ExchangedMessages.TryAdd(user, new List<Message>());
                         }
                     }
                     //Le message vient du serveur, ayant donc comme but de nous informer de la liste des clients connectés
                     //On met à jour la list des utilisateurs connectés dans l'objet ViewModel
 
-                    // ************ CETTE SECTION EST A RETIRER LORS DU FONCTIONNEMENT AVEC WPF ***********************
-                    Console.WriteLine("Clients connectés : " + messageRecu.Body);
-                    // ************************************************************************************************
                 }
                 else
                 {
-                    vm.ExchangedMessages[messageRecu.Sender].Add(messageRecu);
+                    //ExchangedMessages[messageRecu.Sender].Add(messageRecu);
+                    OnReceivedMessage(messageRecu.Body, messageRecu.Sender);
                     //Le message vient d'un autre client, on l'ajoute dans le dictionnaire de notre conversation avec l'autre client
                 }
 
-                //******** CETTE SECTION SERT JUSTE A TESTER LE PROGRAMME EN MODE CONSOLE **************** //
-                if (messageRecu.FileSize > 0)
-                {
-                    messageRecu.Body = messageRecu.Body + " Attachment : " + messageRecu.FileName;
-                }
-
-                if (messageRecu.Sender != "Server")
-                {
-                    Console.WriteLine(messageRecu.Sender + " : " + messageRecu.Body);
-                }
-
-                //*************************************************************************************** //
             }
         }
-        void UpdateConnection(ViewModel vm)
-        {
-            while (true)
-            {
-                Thread.Sleep(50);
-                Message pingMessage = new Message();
-                pingMessage.Sender = this.username;
-                pingMessage.Target = "Server";
-                pingMessage.SendTime = DateTime.Now.ToString();
-                this.Envoyer(pingMessage,vm);
-                //On envoie un ping toutes les 3 sec au serveur pour lui dire qu'on est toujours connectés
 
-            }
-        }
-        public void StartChat(ViewModel vm)
+        public void StartChat()
         {
+            MessagesToSend.Enqueue(new Message { Body = "Kasra" });
             IPAddress ipServer;
 
             ipServer = Dns.GetHostAddresses("igorpc.northeurope.cloudapp.azure.com")[0];
@@ -241,53 +286,40 @@ namespace PtiChatClient
             this.BR = new BinaryReader(NS);
             this.BW = new BinaryWriter(NS);
 
-            // ******* REACTIVER CETTE SECTION POUR FAIRE MARCHER LE PROGRAMME AVEC WPF ****************
-            //while (vm.MessagesToSend.IsEmpty)
-            //{
-            //    //attendre
-            //}
-            //Message startingMessage;
-            //vm.MessagesToSend.TryDequeue(out startingMessage);
+            while (MessagesToSend.IsEmpty)
+            {
+                //attendre
+            }
+            Message startingMessage;
+            MessagesToSend.TryDequeue(out startingMessage);
 
-            // *****************************************************************************************
 
-            // **************** CETTE SECTION SERT JUSTE A TESTER LE PROGRAMME EN MODE CONSOLE *********
-            Message startingMessage = new Message();
-            Console.WriteLine("Choisissez un nom d'utilisateur.");
-            startingMessage.Body = Console.ReadLine();
-            // *****************************************************************************************
-
-            this.username = startingMessage.Body;
-            vm.ClientName = startingMessage.Body;
-            startingMessage.Sender = this.username;
+            this.Username = startingMessage.Body;
+            //ClientName = startingMessage.Body;
+            startingMessage.Sender = this.Username;
             startingMessage.Target = "Server";
-            startingMessage.Body = this.username;
+            startingMessage.Body = this.Username;
             startingMessage.SendTime = DateTime.Now.ToString();
-            this.Envoyer(startingMessage, vm);
+            this.Envoyer(startingMessage);
             //On envoie notre nom d'usilisteur au serveur
 
             Message listOfClients = this.Recevoir();
             List<string> connectedPeople = listOfClients.Body.Split(',').ToList();
-            vm.ConnectedUsers = connectedPeople;
-
-            // *************** CETTE SECTION SERT A TESTER LE PROGRAMME EN MODE CONSOLE *******************
-            Console.WriteLine("Clients connectés : " + listOfClients.Body);
-            // ********************************************************************************************
+            ConnectedUsers = connectedPeople;
 
             foreach (string user in connectedPeople)
             {
-                vm.ExchangedMessages.TryAdd(user, new List<Message>());
+                ExchangedMessages.TryAdd(user, new List<Message>());
             }
             //On reçoit la liste des clients connecté de la part du serveur et on la mets à jour
 
-            Thread sendingThread = new Thread(() => EnvoiMessage(vm));
-            Thread receivingThread = new Thread(() => ReceptionMessage(vm));
-            Thread updatingThread = new Thread(() => UpdateConnection(vm));
+            Thread sendingThread = new Thread(() => EnvoiMessage());
+            Thread receivingThread = new Thread(() => ReceptionMessage());
             sendingThread.Start();
             receivingThread.Start();
-            updatingThread.Start();
-            //On lance les différents threads d'envoi, réception et de d'envoi de ping au serveur
+            //On lance les différents threads d'envoi et réception de message au serveur
 
         }
+
     }
 }
