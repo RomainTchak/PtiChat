@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using WpfApplication2.ViewModel;
+using System.Net.NetworkInformation;
 
 namespace WpfApplication2
 {
@@ -73,10 +74,7 @@ namespace WpfApplication2
         {
             ExchangedMessages.TryAdd("Server", new List<Message>());
             SocClient = new TcpClient();
-            //StartChat();
-            //NS = SocClient.GetStream();
-            //BR = new BinaryReader(NS);
-            //BW = new BinaryWriter(NS);
+            isConnected = false;
         }
 
         public string Username { get; set; }
@@ -84,8 +82,16 @@ namespace WpfApplication2
         NetworkStream NS;
         BinaryReader BR;
         BinaryWriter BW;
-        private Object myLock = new object();
+        private object myLock = new object();
+        private object connectionLock = new object();
+        private bool isConnected = false;
+        string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
+        //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
+        //string HostAddress = "localhost";
+        Exception WriteException = new Exception("Write Exception");
+        Exception ConnectionException = new Exception("Connection Exception");
         
+
 
         void Envoyer(Message msg)
         {
@@ -117,6 +123,8 @@ namespace WpfApplication2
             while (!NS.DataAvailable)
             {
                 //On attend qu'il y ait quelque chose sur le stream
+
+                
             }
             ReceivedMessage.Sender = BR.ReadString();
 
@@ -185,11 +193,15 @@ namespace WpfApplication2
         void EnvoiMessage()
         {
             bool success;
-            bool ConnectionSuccessful;
-            Message msgToSend;
-            string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
+            
+            
+            Message msgToSend = new Message();
+            //string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
             //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
             //string HostAddress = "localhost";
+
+            
+            
 
             while (true)
             {
@@ -197,6 +209,8 @@ namespace WpfApplication2
                 while (MessagesToSend.IsEmpty)
                 {
                     //attendre
+                    
+                    
                 }
                 
                 //On récupère le premier message dans la file sans le supprimer
@@ -230,19 +244,33 @@ namespace WpfApplication2
                 success = true;
                 try
                 {
-                    this.Envoyer(msgToSend);
-                }
-                catch
-                {
-                    success = false;
-                    //Si l'envoi a échoué, c'est probablement du à une perte de connexion.
-                    //On se déconnecte puis on se reconnecte
-                    SocClient.Close();
-                    ConnectionSuccessful = false;
-                    while (!ConnectionSuccessful)
+                    
+                    try
                     {
-                        ConnectionSuccessful = AttemptConnection(HostAddress, this.Username);
-                    }        
+                        Envoyer(msgToSend);
+                    }
+                    catch(Exception)
+                    {
+                        throw WriteException;
+                    }
+
+                    if(!this.isConnected)
+                    {
+                        throw ConnectionException;
+                    }
+                    //Thread.Sleep(500);
+                }
+                catch(Exception e)
+                {
+                    //L'envoi a échoué, la connexion a été perdue   
+                    success = false;
+                
+                    while (!this.isConnected)
+                    {
+                        //ne rien faire
+                        //On attend que la connexion soit rétablie
+                    }
+                       
                 }
 
                 //on ne dequeue le message à envoyer que si l'envoi a réussi
@@ -251,16 +279,17 @@ namespace WpfApplication2
                     MessagesToSend.TryDequeue(out msgToSend);
                 }
 
-
-                
-                
-
             }
         }
+
+
+
+
         void ReceptionMessage()
         {
             List<Message> MsgList = new List<Message>();
             string ClientToUpdate;
+            
 
             while (true)
             {
@@ -268,10 +297,20 @@ namespace WpfApplication2
                 //On essaie de recevoir les messages
                 try
                 {
+                    
                     while (!NS.DataAvailable)
                     {
                         //On attend qu'il y ait quelque chose sur le Stream
+
+                        //On vérifie qu'on est toujours connecté à Internet
+                        if (!this.isConnected)
+                        {
+                            throw ConnectionException;
+                        }
+
                     }
+                    
+
                     Message messageRecu = this.Recevoir();
                     if (messageRecu.Sender == "Server")
                     {
@@ -341,13 +380,20 @@ namespace WpfApplication2
                         //Le message vient d'un autre client, on l'ajoute dans le dictionnaire de notre conversation avec l'autre client
                         //ExchangedMessages[messageRecu.Sender].Add(messageRecu);
                         OnReceivedMessage(messageRecu.Body, messageRecu.Sender);
+
+                        //Pour laisser le temps à l'event d'être traité
+                        Thread.Sleep(500);
                     }
                 }
-                catch
+                catch(Exception ex)
                 {
-                    //Il y a eu une erreur, ce qui normalement veut dire qu'on a perdu la connexion
-                    //avec le serveur.
-                    
+                    if(ex.Message == "Connection Exception")
+                    {
+                        //Si l'erreur de réception est due à une déconnexion, on attend jusqu'à ce que 
+                        //la connexion soit rétablie
+
+                        while (!this.isConnected) { }
+                    }
                 }
 
                 
@@ -357,9 +403,7 @@ namespace WpfApplication2
         
         public void StartChat()
         {
-            string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
-            //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
-            //string HostAddress = "localhost";
+            
 
 
             MessagesToSend.Enqueue(new Message { Body = $"Igor{DateTime.Now.Millisecond}" });
@@ -375,19 +419,21 @@ namespace WpfApplication2
             // *****************************************************************************************
 
             //On essaie de se connecter au serveur
-            bool ConnectionSuccessful = false;
-            while (!ConnectionSuccessful)
+            //bool ConnectionSuccessful = false;
+            while (!this.isConnected)
             {
-                ConnectionSuccessful = AttemptConnection(HostAddress, startingMessage.Body);
+                this.isConnected = AttemptConnection(this.HostAddress, startingMessage.Body);
             }
 
 
             //On lance les différents threads d'envoi et de réception
             Thread sendingThread = new Thread(() => EnvoiMessage());
             Thread receivingThread = new Thread(() => ReceptionMessage());
+            Thread reconnectionThread = new Thread(() => Reconnect());
             
             sendingThread.Start();
             receivingThread.Start();
+            reconnectionThread.Start();
             
             
 
@@ -433,11 +479,12 @@ namespace WpfApplication2
                 ConnectMessage.Target = "Server";
                 ConnectMessage.Body = this.Username;
                 ConnectMessage.SendTime = DateTime.Now.ToString();
+
                 //On envoie notre nom d'utilisateur au serveur
-                this.Envoyer(ConnectMessage);
+                Envoyer(ConnectMessage);
   
                 //On reçoit la liste des clients connecté de la part du serveur et on met à jour ConnectedUsers
-                listOfClients = this.Recevoir();
+                listOfClients = Recevoir();
                 connectedPeople = listOfClients.Body.Split(',').ToList();
                 ConnectedUsers = string.IsNullOrEmpty(connectedPeople[0]) ? new List<string>() : connectedPeople;
 
@@ -454,6 +501,89 @@ namespace WpfApplication2
             }
 
             return success;
+        }
+
+
+
+        public void Reconnect()
+        {
+            Ping myPing;
+            String host;
+            byte[] buffer;
+            int timeout;
+            PingOptions pingOptions;
+            PingReply reply;
+            int counter = 0; //counter va stocker le nombre de pings consécutifs sans réponse
+
+            while (true)
+            {
+                //On ping google pour tester la connexion à Internet
+                
+                try
+                {
+                    myPing = new Ping();
+                    host = "8.8.4.4";
+                    buffer = new byte[32];
+                    timeout = 10000;
+                    pingOptions = new PingOptions();
+                    reply = myPing.Send(host, timeout, buffer, pingOptions);
+                    this.isConnected = (reply.Status == IPStatus.Success);
+                    counter = 0;
+                }
+                catch (Exception pingEx1)
+                {
+                    //A chaque ping sans réponse, on incrémente counter
+                    counter++;
+
+                    //Dès qu'on a plus de 2 pings sans réponse, on considère que la connexion a été perdue
+                    if (counter >= 5)
+                    {
+                        this.isConnected = false;
+                        counter = 0;
+                    }
+                }
+
+                lock (connectionLock)
+                {
+                    if (!this.isConnected)
+                    {
+
+                        //On teste si on a une connexion Internet
+                        bool PingSuccessful = false;
+                        while (!PingSuccessful)
+                        {
+                            try
+                            {
+                                myPing = new Ping();
+                                host = "8.8.8.8";
+                                buffer = new byte[32];
+                                timeout = 1000;
+                                pingOptions = new PingOptions(10000, false);
+                                reply = myPing.Send(host, timeout, buffer, pingOptions);
+                                PingSuccessful = (reply.Status == IPStatus.Success);
+                                
+                            }
+                            catch(Exception pingEx)
+                            {
+                                PingSuccessful = false;
+                                
+                            }
+                        }
+                        
+                        //Dès qu'on a récupéré la connexion Internet, on se reconnecte au serveur
+                        
+                        SocClient.Close();
+                        SocClient = new TcpClient();
+
+                        while (!AttemptConnection(HostAddress, this.Username))
+                        {
+
+                        }
+                        
+                        this.isConnected = true;
+                    }
+                }
+            }
         }
 
     }
