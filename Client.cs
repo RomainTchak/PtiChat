@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using WpfApplication2.ViewModel;
 using System.Net.NetworkInformation;
+using System.Diagnostics;
 
 namespace WpfApplication2
 {
@@ -22,6 +23,21 @@ namespace WpfApplication2
         public ConcurrentQueue<Message> MessagesToSend { get; set; } = new ConcurrentQueue<Message>();
         private List<string> connectedUsers = new List<string>();
         public List<string> ConnectedUsers { get { return connectedUsers; } set { connectedUsers = value; OnNewConnectedCustomer(connectedUsers); } }
+        public string Username { get; set; }
+        public string Password { get; set; }
+        public TcpClient SocClient;
+        public NetworkStream NS;
+        public BinaryReader BR;
+        public BinaryWriter BW;
+        private object myLock = new object();
+        private object connectionLock = new object();
+        public bool isConnected = false;
+        public string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
+        //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
+        //string HostAddress = "localhost";
+        Exception WriteException = new Exception("Write Exception");
+        Exception ConnectionException = new Exception("Connection Exception");
+
 
         public void OnNewConnectedCustomer(List<string> list)
         {
@@ -42,16 +58,18 @@ namespace WpfApplication2
         }
         
 
-        public void OnReceivedMessage (string msg, string target)
+        public void OnReceivedMessage (string msg, string interlocutor,string sender)
         {
             
             var list = new List<Message>();
-            if (ExchangedMessages.TryGetValue(target, out list))
+            if (ExchangedMessages.TryGetValue(interlocutor, out list))
             {
-                list.Add(new Message { Body = msg, Target = target});
+                //Si l'interlocuteur est le sender, ca veut dire que le message a été envoyé par un autre client
+                list.Add(new Message { Body = msg, Sender = (interlocutor == sender) ? interlocutor : this.Username, Target = (interlocutor == sender) ? this.Username : interlocutor });
             }
-            MessageEventArgs MessageEA = new MessageEventArgs(msg, target);
+            MessageEventArgs MessageEA = new MessageEventArgs(msg, interlocutor, sender);
             ReceivedMessage?.Invoke(this, MessageEA);
+            
         }
 
         public event EventHandler<MessageEventArgs> ReceivedMessage;
@@ -59,17 +77,19 @@ namespace WpfApplication2
         public sealed class MessageEventArgs : EventArgs
         {
             public string MessageContent { get; private set; }
-            public string Target { get; private set; }
+            public string Interlocutor { get; private set; }
+            public string Sender { get; private set; }
 
-            public MessageEventArgs(string messageContent, string target)
+            public MessageEventArgs(string messageContent, string interlocutor, string sender)
             {
                 MessageContent = messageContent;
-                Target = target;
+                Interlocutor = interlocutor;
+                Sender = sender;
             }
         }
 
 
-        //Import Client
+        
         public Client()
         {
             ExchangedMessages.TryAdd("Server", new List<Message>());
@@ -77,19 +97,7 @@ namespace WpfApplication2
             isConnected = false;
         }
 
-        public string Username { get; set; }
-        TcpClient SocClient;
-        NetworkStream NS;
-        BinaryReader BR;
-        BinaryWriter BW;
-        private object myLock = new object();
-        private object connectionLock = new object();
-        private bool isConnected = false;
-        string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
-        //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
-        //string HostAddress = "localhost";
-        Exception WriteException = new Exception("Write Exception");
-        Exception ConnectionException = new Exception("Connection Exception");
+        
         
 
 
@@ -162,12 +170,32 @@ namespace WpfApplication2
             ReceivedMessage.FileName = BR.ReadString();
             if (ReceivedMessage.FileSize != 0)
             {
-                //On transforme le tableau d'octets en fichier
-                string pathToFile = "C:\\PtiChat\\" + ReceivedMessage.FileName;
-                Stream file = File.OpenWrite(pathToFile);
-                file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
-                
-                file.Close();
+                try
+                {
+                    //On transforme le tableau d'octets en fichier
+                    string pathToFile = "C:\\PtiChat\\" + ReceivedMessage.FileName;
+                    Stream file = File.OpenWrite(pathToFile);
+                    file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
+
+                    file.Close();
+                }
+                catch (System.IO.IOException)
+                {
+                    try
+                    {
+                        //On essaie de renommer le fichier
+                        string extension = ReceivedMessage.FileName.Substring(ReceivedMessage.FileName.LastIndexOf('.'));
+                        string RealName = ReceivedMessage.FileName.Substring(0, ReceivedMessage.FileName.LastIndexOf('.'));
+                        ReceivedMessage.FileName = RealName + " copy" + extension;
+                        string pathToFile = "C:\\PtiChat\\" + ReceivedMessage.FileName;
+                        Stream file = File.OpenWrite(pathToFile);
+                        file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
+                    }
+                    catch (Exception FileEx)
+                    {
+                        Debug.WriteLine(FileEx.Message);
+                    }
+                }
 
                 ReceivedMessage.Body = $"{ReceivedMessage.Body} Pièce jointe : {ReceivedMessage.FileName}";
             }
@@ -190,6 +218,9 @@ namespace WpfApplication2
 
             return ReceivedMessage;
         }
+
+
+
         void EnvoiMessage()
         {
             bool success;
@@ -232,13 +263,15 @@ namespace WpfApplication2
                 }
                 else
                 {
+                    //On envoie pas de fichier donc on envoie un tableau vide
                     msgToSend.FileSize = 0;
                     msgToSend.Attachment = new byte[0];
                     msgToSend.FileName = "";
-                    //On envoie pas de fichier donc on envoie un tableau vide
+                    
                 }
                 msgToSend.Sender = Username;
                 msgToSend.SendTime = DateTime.Now.ToString();
+
 
                 //On essaie d'envoyer le message
                 success = true;
@@ -258,9 +291,10 @@ namespace WpfApplication2
                     {
                         throw ConnectionException;
                     }
-                    //Thread.Sleep(500);
+                    
+                    
                 }
-                catch(Exception e)
+                catch(Exception )
                 {
                     //L'envoi a échoué, la connexion a été perdue   
                     success = false;
@@ -352,14 +386,14 @@ namespace WpfApplication2
                             ConnectedUsers = string.IsNullOrEmpty(connectedPeople[0]) ? new List<string>() : connectedPeople;
 
                             //On supprime les conversations correspondant aux clients qui ne sont plus connectés
-                            foreach (string user in ExchangedMessages.Keys)
-                            {
+                            //foreach (string user in ExchangedMessages.Keys)
+                            //{
 
-                                if (!ConnectedUsers.Contains(user))
-                                {
-                                    ExchangedMessages.TryRemove(user, out MsgList);
-                                }
-                            }
+                            //    if (!ConnectedUsers.Contains(user))
+                            //    {
+                            //        ExchangedMessages.TryRemove(user, out MsgList);
+                            //    }
+                            //}
 
                             foreach (string user in connectedPeople)
                             {
@@ -368,6 +402,7 @@ namespace WpfApplication2
                                 if (!(ExchangedMessages.ContainsKey(user)))
                                 {
                                     ExchangedMessages.TryAdd(user, new List<Message>());
+                                    RetrieveMessages(user);
                                 }
                             }
 
@@ -378,11 +413,11 @@ namespace WpfApplication2
                     else
                     {
                         //Le message vient d'un autre client, on l'ajoute dans le dictionnaire de notre conversation avec l'autre client
-                        //ExchangedMessages[messageRecu.Sender].Add(messageRecu);
-                        OnReceivedMessage(messageRecu.Body, messageRecu.Sender);
+                        OnReceivedMessage(messageRecu.Body, messageRecu.Sender,messageRecu.Sender);
 
-                        //Pour laisser le temps à l'event d'être traité
-                        Thread.Sleep(500);
+                        //On stocke ce message dans la base de données de messages
+                        StoreMessage(messageRecu.Sender, messageRecu);
+
                     }
                 }
                 catch(Exception ex)
@@ -394,38 +429,76 @@ namespace WpfApplication2
 
                         while (!this.isConnected) { }
                     }
+                    
+                    else
+                    {
+                        throw;
+                    }
+                    
                 }
 
                 
             }
         }
 
-        
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="interlocutor"></param>
+        /// <param name="MessageToStore"></param>
+        public void StoreMessage(string interlocutor,Message MessageToStore)
+        {
+            var Line = new List<string>();
+            Line.Add($"{MessageToStore.Sender}*{MessageToStore.Target}*{MessageToStore.Body}");       
+            File.AppendAllLines($"C:\\PtiChat\\Conversation between {this.Username}&{interlocutor}.txt",Line);
+
+        }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="user"></param>
+        public void RetrieveMessages(string user)
+        {
+            try
+            {
+                Message storedMessage = new Message();
+                List<string> messageHistory = File.ReadLines($"C:\\PtiChat\\Conversation between {this.Username}&{user}.txt").ToList();
+                foreach (string message in messageHistory)
+                {
+                    if (!string.IsNullOrEmpty(message))
+                    {
+                        List<string> Attributes = message.Split('*').ToList();
+                        storedMessage.Sender = Attributes[0];
+                        storedMessage.Target = Attributes[1];
+                        storedMessage.Body = Attributes[2];
+                        string interlocutor;
+                        if (storedMessage.Sender == this.Username)
+                        {
+                            interlocutor = storedMessage.Target;
+                        }
+                        else
+                        {
+                            interlocutor = storedMessage.Sender;
+                        }
+                        OnReceivedMessage(storedMessage.Body, interlocutor, storedMessage.Sender);
+                    }
+
+                }
+
+
+                
+            }
+            catch (System.InvalidOperationException) { }
+            
+            catch (System.IO.FileNotFoundException) { }
+        }
+
+
         public void StartChat()
         {
             
-
-
-            MessagesToSend.Enqueue(new Message { Body = $"Igor{DateTime.Now.Millisecond}" });
-
-            // ******* REACTIVER CETTE SECTION POUR FAIRE MARCHER LE PROGRAMME AVEC WPF ****************
-            while (MessagesToSend.IsEmpty)
-            {
-                //attendre
-            }
-            Message startingMessage;
-            MessagesToSend.TryDequeue(out startingMessage);
-
-            // *****************************************************************************************
-
-            //On essaie de se connecter au serveur
-            //bool ConnectionSuccessful = false;
-            while (!this.isConnected)
-            {
-                this.isConnected = AttemptConnection(this.HostAddress, startingMessage.Body);
-            }
-
-
+            this.isConnected = true;
             //On lance les différents threads d'envoi et de réception
             Thread sendingThread = new Thread(() => EnvoiMessage());
             Thread receivingThread = new Thread(() => ReceptionMessage());
@@ -436,22 +509,22 @@ namespace WpfApplication2
             reconnectionThread.Start();
             
             
-
         }
 
+        
         /// <summary>
-        /// Essaie d'établir la connexion en suivant le protocole d'identification
+        /// 
         /// </summary>
-        /// <param name="ServerHostDns"> l'adresse où contacter le serveur </param>
-        /// <param name="pseudo"> le nom avec lequel on va être identifié sur le serveur</param>
-        /// <returns> un booléen indiquant si la connexion est réussie </returns>
-        public bool AttemptConnection(string ServerHostDns,string pseudo)
+        /// <param name="AuthMode"></param>
+        /// <param name="pseudo"></param>
+        /// <param name="password"></param>
+        /// <returns></returns>
+        public bool TryAuthentification(bool AuthMode, string pseudo, string password)
         {
             IPAddress ipServer;
             bool success = true;
-            Message listOfClients;
             Message ConnectMessage = new Message();
-            List<string> connectedPeople;
+            Message ServerResponse = new Message();
 
             //On essaie de se connecter au serveur puis d'envoyer le message d'identification
             try
@@ -459,50 +532,50 @@ namespace WpfApplication2
 
                 //On se connecte au serveur
 
-                ipServer = Dns.GetHostAddresses(ServerHostDns)[0];
-
-
+                ipServer = Dns.GetHostAddresses(this.HostAddress)[0];
+                
                 SocClient.Connect(ipServer, 80);
-            
-
+                
                 //On essaie ensuite d'envoyer le message d'identification au serveur
-            
+
                 this.NS = SocClient.GetStream();
                 this.BR = new BinaryReader(NS);
                 this.BW = new BinaryWriter(NS);
 
                 this.Username = pseudo;
+                this.Password = password;
 
                 
-                //ClientName = ConnectMessage.Body;
                 ConnectMessage.Sender = this.Username;
                 ConnectMessage.Target = "Server";
-                ConnectMessage.Body = this.Username;
+                ConnectMessage.Body = $"{AuthMode.ToString()}*{this.Username}*{this.Password}";
                 ConnectMessage.SendTime = DateTime.Now.ToString();
 
-                //On envoie notre nom d'utilisateur au serveur
+                //On envoie notre message d'authentification au serveur
                 Envoyer(ConnectMessage);
-  
-                //On reçoit la liste des clients connecté de la part du serveur et on met à jour ConnectedUsers
-                listOfClients = Recevoir();
-                connectedPeople = listOfClients.Body.Split(',').ToList();
-                ConnectedUsers = string.IsNullOrEmpty(connectedPeople[0]) ? new List<string>() : connectedPeople;
 
-                //On initialise les conversations dans le dictionnaire ExchangedMessages
-                foreach (string user in connectedPeople)
+                //On reçoit le message de la part du serveur indiquant si la connexion est réussie ou pas
+                ServerResponse = Recevoir();
+                if (ServerResponse.Body != "OK")
                 {
-                    ExchangedMessages.TryAdd(user, new List<Message>());
+                    success = false;
+                    SocClient.Close();
+                    SocClient = new TcpClient();
                 }
+
+               
             }
-            catch
+            catch (Exception)
             {
                 //Il y a eu une erreur lors de la tentative de connexion
                 success = false;
+                SocClient.Close();
+                SocClient = new TcpClient();
             }
 
+            
             return success;
         }
-
 
 
         public void Reconnect()
@@ -522,21 +595,20 @@ namespace WpfApplication2
                 try
                 {
                     myPing = new Ping();
-                    host = "8.8.4.4";
+                    host = "8.8.8.8";
                     buffer = new byte[32];
-                    timeout = 10000;
-                    pingOptions = new PingOptions();
+                    timeout = 1000;
+                    pingOptions = new PingOptions(10000,false);
                     reply = myPing.Send(host, timeout, buffer, pingOptions);
-                    this.isConnected = (reply.Status == IPStatus.Success);
                     counter = 0;
                 }
-                catch (Exception pingEx1)
+                catch (Exception)
                 {
                     //A chaque ping sans réponse, on incrémente counter
                     counter++;
 
-                    //Dès qu'on a plus de 2 pings sans réponse, on considère que la connexion a été perdue
-                    if (counter >= 5)
+                    //Dès qu'on a plus de 3 pings sans réponse, on considère que la connexion a été perdue
+                    if (counter >= 3)
                     {
                         this.isConnected = false;
                         counter = 0;
@@ -560,10 +632,10 @@ namespace WpfApplication2
                                 timeout = 1000;
                                 pingOptions = new PingOptions(10000, false);
                                 reply = myPing.Send(host, timeout, buffer, pingOptions);
-                                PingSuccessful = (reply.Status == IPStatus.Success);
+                                PingSuccessful = true;
                                 
                             }
-                            catch(Exception pingEx)
+                            catch(Exception)
                             {
                                 PingSuccessful = false;
                                 
@@ -575,7 +647,7 @@ namespace WpfApplication2
                         SocClient.Close();
                         SocClient = new TcpClient();
 
-                        while (!AttemptConnection(HostAddress, this.Username))
+                        while (!TryAuthentification(false, this.Username, this.Password))
                         {
 
                         }
