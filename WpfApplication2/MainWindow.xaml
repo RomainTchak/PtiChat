@@ -1,0 +1,80 @@
+﻿<Window x:Class="WpfApplication2.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:WpfApplication2"
+        xmlns:vm="clr-namespace:WpfApplication2.ViewModel"
+        mc:Ignorable="d"
+        DataContext="{Binding Path=Main, Source={StaticResource Locator}}"
+        Title="PtiChat" Height="370" Width="525">
+
+    <Window.Resources>
+        <vm:StringToMessageConverter x:Key="ConverterToMessage"/>
+    </Window.Resources>
+    <Grid Background="White">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="2*"/>
+            <ColumnDefinition Width="45*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="15*"/>
+            <RowDefinition Height="304*"/>
+        </Grid.RowDefinitions>
+
+
+        <ListView x:Name="listBox_chat" Grid.Column="1" ItemsSource="{Binding CurrentMsgList, Mode=TwoWay}" DisplayMemberPath="Body" HorizontalAlignment="Left" Height="187" Grid.Row="1" VerticalAlignment="Top" Width="238" Margin="0,42,0,0" Background="White">
+            <ListView.ItemContainerStyle>
+
+                <Style TargetType="{x:Type ListViewItem}">
+                    <Setter Property="Template">
+
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                                <Border Name="Border" BorderBrush="Black" BorderThickness="0.5" Background="#FF91CDD6" CornerRadius="3" Margin="1" MaxWidth="160">
+                                    <ContentPresenter Margin="4" />
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFromMe}" Value="true">
+                            <Setter Property="HorizontalAlignment" Value="Right"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsFromMe}" Value="false">
+                            <Setter Property="HorizontalAlignment" Value="Left"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ListView.ItemContainerStyle>
+        </ListView>
+        <Button x:Name="button_send" Content="Send" Grid.Column="1" HorizontalAlignment="Left" Height="29" Margin="352,246,0,0" Grid.Row="1" VerticalAlignment="Top" Width="69" Click="button_send_Click"/>
+        <ListView x:Name="listBox_clients" ItemsSource="{Binding ConnectedUsers}" DisplayMemberPath="Name" SelectedItem="{Binding CurrentInterlocutor}" Grid.Column="1" HorizontalAlignment="Left" Height="196" Margin="311,42,0,0" Grid.Row="1" VerticalAlignment="Top" Width="160" Background="#FFDDDDDD" BorderBrush="#FF707070">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="{x:Type ListViewItem}">
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasSentANewMessage}" Value="true">
+                            <Setter Property="Background" Value="Aqua"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding HasSentANewMessage}" Value="false">
+                            <Setter Property="Background" Value="Transparent"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ListView.ItemContainerStyle>
+        </ListView>
+        <Label x:Name="label_welcome" Content="{Binding WelcomeMsg}" Grid.Column="1" HorizontalAlignment="Left" Height="37" Grid.Row="1" VerticalAlignment="Top" Width="376"/>
+
+
+
+        <TextBox x:Name="textBox_msg" KeyUp="TextBox_KeyEnterUpdate" Margin="0,246,148,40" Grid.Row="1" Grid.Column="1" Background="#FFDDDDDD" Text="{Binding CurrentMsg, Mode=OneWayToSource, Converter={StaticResource ResourceKey=ConverterToMessage}, UpdateSourceTrigger=Explicit}" Foreground="#FF2F9C34" SelectionBrush="#FF7D3F87" BorderBrush="Black"/>
+
+        <Button Click="button_sendFile_Click" x:Name="button" Grid.Column="1" HorizontalAlignment="Left" Height="29" Margin="442,246,0,0" Grid.Row="1" VerticalAlignment="Top" Width="29">
+            <StackPanel>
+                <Image Source="Ressources/upload-button.png" />
+            </StackPanel>
+        </Button>
+
+    </Grid>
+
+</Window>
