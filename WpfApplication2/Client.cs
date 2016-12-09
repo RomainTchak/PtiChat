@@ -1,18 +1,12 @@
-﻿using GalaSoft.MvvmLight;
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using WpfApplication2.ViewModel;
 using System.Net.NetworkInformation;
-using System.Diagnostics;
 
 namespace WpfApplication2
 {
@@ -33,23 +27,20 @@ namespace WpfApplication2
         private object connectionLock = new object();
         public bool isConnected = false;
         public string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
-        //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
-        //string HostAddress = "localhost";
+        //public string HostAddress = "localhost";
         Exception WriteException = new Exception("Write Exception");
         Exception ConnectionException = new Exception("Connection Exception");
+        private string PathToAppDirectory = "C:\\PtiChat";
 
-
-        public void OnNewConnectedCustomer(List<string> list)
-        {
-            UserEventArgs UserEA = new UserEventArgs(list);
-            NewConnectedCustomer?.Invoke(this, UserEA);
-        }
-
+        public event EventHandler<MessageEventArgs> ReceivedMessage;
         public event EventHandler<UserEventArgs> NewConnectedCustomer;
 
+        /// <summary>
+        /// Cette classe permet de définir les paramètres de l'événement "la liste de client a été mise à jour"
+        /// </summary>
         public sealed class UserEventArgs : EventArgs
         {
-            public List<string> UserNames { get; private set; }
+            public List<string> UserNames { get; private set; } //la liste des noms des clients connectés
 
             public UserEventArgs(List<string> usernames)
             {
@@ -57,7 +48,40 @@ namespace WpfApplication2
             }
         }
 
+        /// <summary>
+        /// Cette classe permet de définir les paramètres de l'événement "il y a un nouveau message à afficher"
+        /// </summary>
+        public sealed class MessageEventArgs : EventArgs
+        {
+            public string MessageContent { get; private set; } //le corps du message à afficher
+            public string Interlocutor { get; private set; } // le nom de la personne qui nous envoie le message ou à qui on l'envoie
+            public string Sender { get; private set; } // le nom de la personne qui envoie le message (qui est toujours égal à l'interlocuteur
+                                                       // sauf s'il s'agit d'un message qu'on recharge dans un historique de messages, auquel cas on peut être l'expéditeur
 
+            public MessageEventArgs(string messageContent, string interlocutor, string sender)
+            {
+                MessageContent = messageContent;
+                Interlocutor = interlocutor;
+                Sender = sender;
+            }
+        }
+
+        /// <summary>
+        /// Déclenche l'événement "la liste des utilisateurs connectés a changé" pour l'interface
+        /// </summary>
+        /// <param name="list"> la nouvelle liste des noms d'utilisateurs connectés </param>
+        public void OnNewConnectedCustomer(List<string> list)
+        {
+            UserEventArgs UserEA = new UserEventArgs(list);
+            NewConnectedCustomer?.Invoke(this, UserEA);
+        }
+
+        /// <summary>
+        /// Déclenche l'événement "il y a un nouveau message à afficher" pour l'interface
+        /// </summary>
+        /// <param name="msg"> le corps du message </param>
+        /// <param name="interlocutor"> le nom de l'utilisateur (autre que nous-mêmes) concerné par ce message </param>
+        /// <param name="sender"> l'expéditeur du message </param>
         public void OnReceivedMessage(string msg, string interlocutor, string sender)
         {
 
@@ -72,40 +96,24 @@ namespace WpfApplication2
 
         }
 
-        public event EventHandler<MessageEventArgs> ReceivedMessage;
-
-        public sealed class MessageEventArgs : EventArgs
-        {
-            public string MessageContent { get; private set; }
-            public string Interlocutor { get; private set; }
-            public string Sender { get; private set; }
-
-            public MessageEventArgs(string messageContent, string interlocutor, string sender)
-            {
-                MessageContent = messageContent;
-                Interlocutor = interlocutor;
-                Sender = sender;
-            }
-        }
-
-
-
         public Client()
         {
-            ExchangedMessages.TryAdd("Server", new List<Message>());
+
             SocClient = new TcpClient();
             isConnected = false;
+
         }
 
 
-
-
-
+        /// <summary>
+        /// Envoie un objet Message sur le Stream à destination du serveur
+        /// </summary>
+        /// <param name="msg"> l'objet message à envoyer </param>
         void Envoyer(Message msg)
         {
             lock (myLock)
             {
-
+                //On envoie successivement les différents éléments du Message sur le stream
                 BW.Write((string)msg.Sender);
                 BW.Write((string)msg.Target);
                 BW.Write((string)msg.Body);
@@ -118,16 +126,20 @@ namespace WpfApplication2
                 BW.Write((string)msg.FileName);
                 BW.Write((string)msg.SendTime);
                 BW.Write((string)msg.ReceiveTime);
-                //On constitue l'objet message à envoyer avec les élements fournis par l'utilisateur 
-
-                //ExchangedMessages[msg.Target].Add(msg);
 
             }
         }
 
+        /// <summary>
+        /// Lit le stream qui relie le client au serveur, et, lorsqu'un message est reçu, récupère les différents attributs
+        /// de ce message
+        /// </summary>
+        /// <returns> l'objet Message qui vient d'être lu sur le stream </returns>
         Message Recevoir()
         {
             Message ReceivedMessage = new Message();
+
+            //La première chaîne de caractères à lire correspond à l'expéditeur
             while (!NS.DataAvailable)
             {
                 //On attend qu'il y ait quelque chose sur le stream
@@ -136,44 +148,53 @@ namespace WpfApplication2
             }
             ReceivedMessage.Sender = BR.ReadString();
 
+            //On lit ensuite le nom du destinataire
             while (!NS.DataAvailable)
             {
                 //On attend qu'il y ait quelque chose sur le stream
             }
             ReceivedMessage.Target = BR.ReadString();
 
+            // On lit le corps du message
             while (!NS.DataAvailable)
             {
                 //On attend qu'il y ait quelque chose sur le stream
             }
             ReceivedMessage.Body = BR.ReadString();
 
+            // On lit la taille de la pièce jointe
             while (!(NS.DataAvailable))
             {
                 //On attend qu'il y ait quelque chose sur le stream
             }
             ReceivedMessage.FileSize = BR.ReadInt32();
+
+            // On ne traite la pièce jointe que si elle a une taille non nulle
             if (ReceivedMessage.FileSize != 0)
             {
+                //On récupère le tableau d'octets représentant le fichier reçu. On le transformera en fichier plus bas
                 while (!NS.DataAvailable)
                 {
                     //On attend qu'il y ait quelque chose sur le stream
                 }
                 ReceivedMessage.Attachment = BR.ReadBytes(ReceivedMessage.FileSize);
-                //On récupère le tableau d'octets représentant le fichier reçu. On le transformera en fichier plus bas
+
             }
 
+            //On lit le nom de la pièce jointe
             while (!NS.DataAvailable)
             {
                 //On attend qu'il y ait quelque chose sur le stream
             }
             ReceivedMessage.FileName = BR.ReadString();
+
+            //On convertit le tableau d'octets de la pièce jointe en fichier
             if (ReceivedMessage.FileSize != 0)
             {
                 try
                 {
-                    //On transforme le tableau d'octets en fichier
-                    string pathToFile = "C:\\PtiChat\\" + ReceivedMessage.FileName;
+                    //On transforme le tableau d'octets en fichier sous le nom indiqué par l'attribut filename
+                    string pathToFile = PathToAppDirectory + "\\" + ReceivedMessage.FileName;
                     Stream file = File.OpenWrite(pathToFile);
                     file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
 
@@ -183,7 +204,7 @@ namespace WpfApplication2
                 {
                     try
                     {
-                        //On essaie de renommer le fichier
+                        // Il y a eu une erreur, le On essaie de renommer le fichier
                         string extension = ReceivedMessage.FileName.Substring(ReceivedMessage.FileName.LastIndexOf('.'));
                         string RealName = ReceivedMessage.FileName.Substring(0, ReceivedMessage.FileName.LastIndexOf('.'));
                         ReceivedMessage.FileName = RealName + " copy" + extension;
@@ -191,9 +212,9 @@ namespace WpfApplication2
                         Stream file = File.OpenWrite(pathToFile);
                         file.Write(ReceivedMessage.Attachment, 0, ReceivedMessage.FileSize);
                     }
-                    catch (Exception FileEx)
+                    catch (Exception)
                     {
-                        Debug.WriteLine(FileEx.Message);
+                        //Debug.WriteLine(FileEx.Message);
                     }
                 }
 
@@ -213,48 +234,43 @@ namespace WpfApplication2
                 //On attend qu'il y ait quelque chose sur le stream
             }
             ReceivedMessage.ReceiveTime = BR.ReadString();
-            ReceivedMessage.ReceiveTime = DateTime.Now.ToString();
+
             //On récupère la date de réception du message
+            ReceivedMessage.ReceiveTime = DateTime.Now.ToString();
 
             return ReceivedMessage;
         }
 
 
-
+        /// <summary>
+        /// Gère l'envoi de messages vers le serveur
+        /// </summary>
         void EnvoiMessage()
         {
             bool success;
 
-
             Message msgToSend = new Message();
-            //string HostAddress = "ec2-35-162-78-174.us-west-2.compute.amazonaws.com";
-            //string HostAddress = "igorpc.northeurope.cloudapp.azure.com";
-            //string HostAddress = "localhost";
-
-
-
 
             while (true)
             {
-                // ******** REACTIVER CETTE SECTION POUR FAIRE MARCHER LE PROGRAMME AVEC WPF **************
                 while (MessagesToSend.IsEmpty)
                 {
                     //attendre
-
 
                 }
 
                 //On récupère le premier message dans la file sans le supprimer
                 MessagesToSend.TryPeek(out msgToSend);
 
-                // ****************************************************************************************
-
+                //On regarde si le message contient une PJ
                 if (msgToSend.Body.Contains("@File"))
                 {
-                    //On regarde si le message contient une PJ
                     string filePath = msgToSend.Body.Substring(msgToSend.Body.IndexOf("@File") + 5); //Le chemin du fichier
+
+                    //On enlève du corps du message tout ce qui arrive après @File
                     msgToSend.Body = msgToSend.Body.Remove(msgToSend.Body.IndexOf("@File"));
-                    //On enlève tout ce qui arrive après @File
+
+                    //On va lire ce fichier et on le convertit en tableau de bytes pour remplir l'attribut Attachment de l'objet Message
                     Stream file = File.OpenRead(filePath);
                     msgToSend.Attachment = new byte[file.Length];
                     file.Read(msgToSend.Attachment, 0, (int)file.Length);
@@ -318,7 +334,9 @@ namespace WpfApplication2
 
 
 
-
+        /// <summary>
+        /// Gère la réception des messages provenant du serveur
+        /// </summary>
         void ReceptionMessage()
         {
             List<Message> MsgList = new List<Message>();
@@ -346,6 +364,7 @@ namespace WpfApplication2
 
 
                     Message messageRecu = this.Recevoir();
+
                     if (messageRecu.Sender == "Server")
                     {
                         if (messageRecu.Body.Contains("!Cd"))
@@ -386,19 +405,19 @@ namespace WpfApplication2
                             ConnectedUsers = string.IsNullOrEmpty(connectedPeople[0]) ? new List<string>() : connectedPeople;
 
                             //On supprime les conversations correspondant aux clients qui ne sont plus connectés
-                            //foreach (string user in ExchangedMessages.Keys)
-                            //{
+                            foreach (string user in ExchangedMessages.Keys)
+                            {
 
-                            //    if (!ConnectedUsers.Contains(user))
-                            //    {
-                            //        ExchangedMessages.TryRemove(user, out MsgList);
-                            //    }
-                            //}
+                                if (!ConnectedUsers.Contains(user))
+                                {
+                                    ExchangedMessages.TryRemove(user, out MsgList);
+                                }
+                            }
 
                             foreach (string user in connectedPeople)
                             {
                                 //on rajoute la conversation correspondant à chaque nouvel utilisateur dans le dictionnaire
-                                //ExchangedMessages
+                                //ExchangedMessages et on recharge l'historique de la conversation avec cet utilisateur
                                 if (!(ExchangedMessages.ContainsKey(user)))
                                 {
                                     ExchangedMessages.TryAdd(user, new List<Message>());
@@ -429,58 +448,59 @@ namespace WpfApplication2
 
                         while (!this.isConnected) { }
                     }
-
-                    else
-                    {
-                        throw;
-                    }
-
                 }
-
-
             }
         }
 
         /// <summary>
-        /// 
+        /// Enregistre un message dans l'historique d'une conversation (dans un fichier stocké sur l'ordinateur)
         /// </summary>
-        /// <param name="interlocutor"></param>
-        /// <param name="MessageToStore"></param>
+        /// <param name="interlocutor"> le nom de l'interlocuteur dans la conversation dont fait partie le message </param>
+        /// <param name="MessageToStore"> le message à enregistrer dans l'historique </param>
         public void StoreMessage(string interlocutor, Message MessageToStore)
         {
+            //On stocke les messages dans un fichier, sous le format expéditeur*destinataire*corps du message
             var Line = new List<string>();
             Line.Add($"{MessageToStore.Sender}*{MessageToStore.Target}*{MessageToStore.Body}");
-            File.AppendAllLines($"C:\\PtiChat\\Conversation between {this.Username}&{interlocutor}.txt", Line);
+            File.AppendAllLines($"{PathToAppDirectory}\\Conversation between {this.Username}&{interlocutor}.txt", Line);
 
         }
 
         /// <summary>
-        /// 
+        /// Récupère l'historique des messages (stocké dans un fichier sur l'ordinateur) échangés avec un utilisateur spécifié
         /// </summary>
-        /// <param name="user"></param>
+        /// <param name="user"> le nom de l'interlocuteur dont on veut rechrger l'historique des messages </param>
         public void RetrieveMessages(string user)
         {
             try
             {
                 Message storedMessage = new Message();
-                List<string> messageHistory = File.ReadLines($"C:\\PtiChat\\Conversation between {this.Username}&{user}.txt").ToList();
+                //Chaque ligne du fichier correpond à un message
+                List<string> messageHistory = File.ReadLines($"{PathToAppDirectory}\\Conversation between {this.Username}&{user}.txt").ToList();
                 foreach (string message in messageHistory)
                 {
                     if (!string.IsNullOrEmpty(message))
                     {
+                        //Les messages sont stocké sous le format expéditeur*destinataire*corps du message
                         List<string> Attributes = message.Split('*').ToList();
                         storedMessage.Sender = Attributes[0];
                         storedMessage.Target = Attributes[1];
                         storedMessage.Body = Attributes[2];
                         string interlocutor;
+
+                        //l'interlocuteur est la personne avec qui on parle dans la conversation
                         if (storedMessage.Sender == this.Username)
                         {
+                            //Si l'expéditeur c'est nous, alors l'interlocuteur est le destinataire du message
                             interlocutor = storedMessage.Target;
                         }
                         else
                         {
+                            //Si on n'est pas l'expéditeur du message, l'interlocuteur est forcémenent l'expéditeur
                             interlocutor = storedMessage.Sender;
                         }
+
+                        //On informe l'interface qu'elle doit afficher ce message à l'écran
                         OnReceivedMessage(storedMessage.Body, interlocutor, storedMessage.Sender);
                     }
 
@@ -494,9 +514,13 @@ namespace WpfApplication2
             catch (System.IO.FileNotFoundException) { }
         }
 
-
+        /// <summary>
+        /// Point d'entrée du chat
+        /// </summary>
         public void StartChat()
         {
+            //S'il n'existe pas encore, on crée le répertoire de l'application
+            DirectoryInfo create = Directory.CreateDirectory(PathToAppDirectory);
 
             this.isConnected = true;
             //On lance les différents threads d'envoi et de réception
@@ -577,7 +601,9 @@ namespace WpfApplication2
             return success;
         }
 
-
+        /// <summary>
+        /// Vérifie constamment la connexion à Internet et, le cas échéant, tente de se reconnecter au serveur
+        /// </summary>
         public void Reconnect()
         {
             Ping myPing;
@@ -642,13 +668,13 @@ namespace WpfApplication2
                             }
                         }
 
-                        //Dès qu'on a récupéré la connexion Internet, on se reconnecte au serveur
+                        //Dès qu'on a récupéré la connexion Internet, on se reconnecte au serveur en mode SignIn
 
                         SocClient.Close();
                         SocClient = new TcpClient();
-                        Thread.Sleep(500);
 
-                        while (!TryAuthentification(false, this.Username, this.Password))
+                        Thread.Sleep(500);
+                        while (!TryAuthentification(true, this.Username, this.Password))
                         {
 
                         }

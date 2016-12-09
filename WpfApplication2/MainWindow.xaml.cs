@@ -23,12 +23,12 @@ namespace WpfApplication2
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void TextBox_KeyEnterUpdate(object sender, KeyEventArgs e)
-        {           
+        {
             if (e.Key == Key.Enter)
             {
                 UpdateTextBoxBinding(sender as TextBox);
                 KeepScrollDown();
-            }           
+            }
         }
 
         /// <summary>
@@ -54,11 +54,11 @@ namespace WpfApplication2
             var dialog = new CommonOpenFileDialog();
             dialog.IsFolderPicker = false;
             CommonFileDialogResult result = dialog.ShowDialog();
-            if (result == CommonFileDialogResult.Ok) {
-               //Console.WriteLine(dialog.FileName); 
-               textBox_msg.Text = "@File" + dialog.FileName;
-               UpdateTextBoxBinding(textBox_msg);
-               KeepScrollDown();
+            if (result == CommonFileDialogResult.Ok)
+            {
+                textBox_msg.Text = "@File" + dialog.FileName;
+                UpdateTextBoxBinding(textBox_msg);
+                KeepScrollDown();
             }
         }
 
@@ -77,7 +77,7 @@ namespace WpfApplication2
         /// <summary>
         /// Maintient le scroll au niveau du dernier message.
         /// </summary>
-        private void KeepScrollDown ()
+        private void KeepScrollDown()
         {
             if (VisualTreeHelper.GetChildrenCount(listBox_chat) > 0)
             {

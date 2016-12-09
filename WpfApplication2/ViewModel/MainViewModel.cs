@@ -1,16 +1,10 @@
 using GalaSoft.MvvmLight;
-using GalaSoft.MvvmLight.Command;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Data;
-using System.Windows.Input;
-using WpfApplication2;
 
 namespace WpfApplication2.ViewModel
 {
@@ -66,7 +60,7 @@ namespace WpfApplication2.ViewModel
 
         //Affichage des utilisateurs connectés, objet bindé avec la listView des utilisateurs.
         private ObservableCollection<ObservableClient> connectedUsers = new ObservableCollection<ObservableClient>();
-        public ObservableCollection<ObservableClient> ConnectedUsers { get { return connectedUsers; } set { Console.WriteLine("setting ConnectedUsers"); connectedUsers = value; } }
+        public ObservableCollection<ObservableClient> ConnectedUsers { get { return connectedUsers; } set { connectedUsers = value; } }
 
         //Gestion de l'interlocuteur courant, objet bindé avec l'item sélectionné de la listView des utilisateurs.
         private ObservableClient currentInterlocutor = new ObservableClient();
@@ -88,9 +82,7 @@ namespace WpfApplication2.ViewModel
                     {
                         //On affiche chaque message de la conversation précédé par le nom de l'expéditeur
                         list.ForEach(x => { CurrentMsgList.Add(new ObservableMessage { Body = x.Body, Target = x.Target, IsFromMe = (x.Sender == client.Username) }); });
-                        //Console.WriteLine(CurrentMsgList.Count);
                     }
-                    //Console.WriteLine(currentInterlocutor.Name);
                 }
 
             }
@@ -111,13 +103,13 @@ namespace WpfApplication2.ViewModel
                     if (String.IsNullOrEmpty(CurrentInterlocutor.Name))
                     {
                         MessageBox.Show("Veuillez sélectionner un interlocuteur. S'il n'y en a pas, c'est que vous êtes tous seul.");
-                    } else
+                    }
+                    else
                     {
                         currentMsg = value;
                         currentMsg.Sender = Name;
                         currentMsg.Target = CurrentInterlocutor.Name;
                         currentMsg.SendTime = DateTime.Now.ToShortDateString();
-                        //Console.WriteLine("changed current Msg ? : " + value.Body + " And Target is : " + currentMsg.Target);
                         var list = new List<Message>();
 
                         if (client.ExchangedMessages.TryGetValue(CurrentInterlocutor.Name, out list))
@@ -146,21 +138,21 @@ namespace WpfApplication2.ViewModel
             BindingOperations.EnableCollectionSynchronization(CurrentMsgList, verrou2);
 
             //Connection des événements client aux méthodes à exécuter
-            client.NewConnectedCustomer += Client_NewConnectedCustomer;        
+            client.NewConnectedCustomer += Client_NewConnectedCustomer;
             client.ReceivedMessage += Client_ReceivedMessage;
 
-            //client.StartChat(); //Connecte le client avec le serveur.
+            client.StartChat(); //Connecte le client avec le serveur.
         }
 
         /// <summary>
         /// Ouvre une fenêtre qui gère toutes les conditions liées à l'authentification 
         /// </summary>
-        private void StartAuthentification ()
+        private void StartAuthentification()
         {
             var dialog = new MyDialog();
             if (dialog.ShowDialog() == true)
             {
-                if(dialog.Exit)
+                if (dialog.Exit)
                 {
                     MessageBox.Show("A la prochaine !");
                     Application.Current.Shutdown();
@@ -171,12 +163,14 @@ namespace WpfApplication2.ViewModel
                     {
                         Name = dialog.SignInId_Result;
                         WelcomeMsg = $"Bienvenue sur PtiChat, {Name}";
-                    } else
+                    }
+                    else
                     {
                         MessageBox.Show("Nous ne reconnaissons pas ces identifiants, désolé.");
                         StartAuthentification();
                     }
-                } else
+                }
+                else
                 {
                     if (client.TryAuthentification(dialog.SignIn, dialog.SignUpId_Result, dialog.SignUpPw_Result))
                     {
@@ -188,7 +182,7 @@ namespace WpfApplication2.ViewModel
                         MessageBox.Show("L'identifiant est déjà pris par un autre utilisateur.");
                         StartAuthentification();
                     }
-                }               
+                }
             }
         }
 
@@ -198,13 +192,14 @@ namespace WpfApplication2.ViewModel
         /// <param name="sender"></param>
         /// <param name="e"></param>
         private void Client_ReceivedMessage(object sender, Client.MessageEventArgs e)
-        { 
+        {
             if (CurrentInterlocutor.Name == e.Interlocutor) // On ajoute le message à la liste de message si l'interlocuteur est l'interlocuteur courant.
             {
                 CurrentMsgList.Add(new ObservableMessage { Body = e.MessageContent, Target = e.Interlocutor, IsFromMe = client.Username == e.Sender });
-            } else // Sinon on affiche une notification de nouveau message dans la liste des interlocuteurs.
+            }
+            else // Sinon on affiche une notification de nouveau message dans la liste des interlocuteurs.
             {
-               ConnectedUsers.Single(i => i.Name == e.Interlocutor).HasSentANewMessage = true;
+                ConnectedUsers.Single(i => i.Name == e.Interlocutor).HasSentANewMessage = true;
             }
         }
 
@@ -217,14 +212,14 @@ namespace WpfApplication2.ViewModel
         {
             if (ConnectedUsers.Count == 0) //lors de la connetion
             {
-                //ConnectedUsers.Clear();
                 client.ConnectedUsers.ForEach(x => { ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true }); });
-                //Console.WriteLine(ConnectedUsers.Count);
-            } else
+            }
+            else
             {
                 bool newConnection = false;
                 client.ConnectedUsers.ForEach(
-                x => {
+                x =>
+                {
                     if (!ConnectedUsers.Any(i => { return (i.Name == x); }))
                     {
                         ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true });
@@ -242,8 +237,7 @@ namespace WpfApplication2.ViewModel
                         }
                     }
                 }
-                Console.WriteLine(ConnectedUsers.Count);
-            }     
+            }
         }
     }
 }
