@@ -17,7 +17,5 @@
         <extToolkit:WatermarkTextBox x:Name="SignUpId" Watermark="Identifiant" Height="23" Width="300" Margin="125,183,125,111" Grid.Column="1" Grid.Row="1" />
         <extToolkit:WatermarkTextBox x:Name="SignUpPw" Watermark="Mot de passe" Height="23" Width="300" Margin="125,213,125,83" Grid.Column="1" Grid.Row="1" />
         <Button Content="S'inscrire" Click="SignUp_Click" Grid.Column="1" Height="23" Width="300" Margin="125,255,125,41" Grid.Row="1" />
-
-
     </Grid>
 </Window>

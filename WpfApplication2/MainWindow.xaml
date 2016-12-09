@@ -8,7 +8,6 @@
         mc:Ignorable="d"
         DataContext="{Binding Path=Main, Source={StaticResource Locator}}"
         Title="PtiChat" Height="370" Width="525">
-
     <Window.Resources>
         <vm:StringToMessageConverter x:Key="ConverterToMessage"/>
     </Window.Resources>
@@ -21,14 +20,10 @@
             <RowDefinition Height="15*"/>
             <RowDefinition Height="304*"/>
         </Grid.RowDefinitions>
-
-
         <ListView x:Name="listBox_chat" Grid.Column="1" ItemsSource="{Binding CurrentMsgList, Mode=TwoWay}" DisplayMemberPath="Body" HorizontalAlignment="Left" Height="187" Grid.Row="1" VerticalAlignment="Top" Width="238" Margin="0,42,0,0" Background="White">
             <ListView.ItemContainerStyle>
-
                 <Style TargetType="{x:Type ListViewItem}">
                     <Setter Property="Template">
-
                         <Setter.Value>
                             <ControlTemplate TargetType="ListViewItem">
                                 <Border Name="Border" BorderBrush="Black" BorderThickness="0.5" Background="#FF91CDD6" CornerRadius="3" Margin="1" MaxWidth="160">
@@ -64,17 +59,11 @@
             </ListView.ItemContainerStyle>
         </ListView>
         <Label x:Name="label_welcome" Content="{Binding WelcomeMsg}" Grid.Column="1" HorizontalAlignment="Left" Height="37" Grid.Row="1" VerticalAlignment="Top" Width="376"/>
-
-
-
         <TextBox x:Name="textBox_msg" KeyUp="TextBox_KeyEnterUpdate" Margin="0,246,148,40" Grid.Row="1" Grid.Column="1" Background="#FFDDDDDD" Text="{Binding CurrentMsg, Mode=OneWayToSource, Converter={StaticResource ResourceKey=ConverterToMessage}, UpdateSourceTrigger=Explicit}" Foreground="#FF2F9C34" SelectionBrush="#FF7D3F87" BorderBrush="Black"/>
-
         <Button Click="button_sendFile_Click" x:Name="button" Grid.Column="1" HorizontalAlignment="Left" Height="29" Margin="442,246,0,0" Grid.Row="1" VerticalAlignment="Top" Width="29">
             <StackPanel>
                 <Image Source="Ressources/upload-button.png" />
             </StackPanel>
         </Button>
-
     </Grid>
-
 </Window>

@@ -28,25 +28,31 @@ namespace WpfApplication2.ViewModel
     /// </summary>
     public class MainViewModel : ViewModelBase
     {
-        public string Name { get; private set; }
-        public string WelcomeMsg { get; private set; }
-        private readonly object verrou = new object();
-        private readonly object verrou2 = new object();
-        public Client client { get; set; } = new Client();
-        //public bool IsFromMe { get; set; }
+        public string Name { get; private set; } // utilisé dans WelcomeMsg
+        public string WelcomeMsg { get; private set; } // bindé avec le label de message de bienvenue
+        private readonly object verrou = new object(); // verrou pour actualiser la liste des utilisateurs connectés
+        private readonly object verrou2 = new object(); // verrou pour actualiser la liste des messages
+        public Client client { get; set; } = new Client(); //instanciation de la classe client qui contient toutes les méthodes pour communiquer avec le serveur.
 
+        /// <summary>
+        /// Equivalent de la classe Client mais pour l'afichage
+        /// </summary>
         public sealed class ObservableClient : ObservableObject
         {
             private string name;
             public string Name { get { return name; } set { name = value; } }
 
+            // Gère l'affichage des notifications.
             private bool hasSentANewMessage = false;
             public bool HasSentANewMessage { get { return hasSentANewMessage; } set { Set(() => HasSentANewMessage, ref hasSentANewMessage, value); } }
-
         }
 
+        /// <summary>
+        /// Equivalent de la classe Message mais pour l'afichage
+        /// </summary>
         public sealed class ObservableMessage : ObservableObject
         {
+            // Booléen de provenance du message pour l'affichage à gauche ou à droite.
             private bool isFromMe;
             public bool IsFromMe { get { return isFromMe; } set { Set(() => IsFromMe, ref isFromMe, value); } }
 
@@ -58,9 +64,11 @@ namespace WpfApplication2.ViewModel
 
         }
 
+        //Affichage des utilisateurs connectés, objet bindé avec la listView des utilisateurs.
         private ObservableCollection<ObservableClient> connectedUsers = new ObservableCollection<ObservableClient>();
         public ObservableCollection<ObservableClient> ConnectedUsers { get { return connectedUsers; } set { Console.WriteLine("setting ConnectedUsers"); connectedUsers = value; } }
 
+        //Gestion de l'interlocuteur courant, objet bindé avec l'item sélectionné de la listView des utilisateurs.
         private ObservableClient currentInterlocutor = new ObservableClient();
         public ObservableClient CurrentInterlocutor
         {
@@ -72,31 +80,26 @@ namespace WpfApplication2.ViewModel
             {
                 if (value != null)
                 {
-
-
-                    // ******* MON CODE **************************************
                     currentInterlocutor = value;
-                    ConnectedUsers.Single(i => i.Name == currentInterlocutor.Name).HasSentANewMessage = false;
+                    ConnectedUsers.Single(i => i.Name == currentInterlocutor.Name).HasSentANewMessage = false; // La notification de nouveau message est retirée.
                     CurrentMsgList.Clear();
                     var list = new List<Message>();
                     if (client.ExchangedMessages.TryGetValue(currentInterlocutor.Name, out list))
                     {
-
                         //On affiche chaque message de la conversation précédé par le nom de l'expéditeur
                         list.ForEach(x => { CurrentMsgList.Add(new ObservableMessage { Body = x.Body, Target = x.Target, IsFromMe = (x.Sender == client.Username) }); });
-                        Console.WriteLine(CurrentMsgList.Count);
+                        //Console.WriteLine(CurrentMsgList.Count);
                     }
-                    Console.WriteLine(currentInterlocutor.Name);
-                    // *************************************************************
-
+                    //Console.WriteLine(currentInterlocutor.Name);
                 }
 
             }
         }
 
-
+        //Affichage de la liste des messages avec l'interlocuteur courant, objet bindé avec la listView des messages.
         public ObservableCollection<ObservableMessage> CurrentMsgList { get; set; } = new ObservableCollection<ObservableMessage>();
 
+        //Gestion du message courant, objet bindé avec le texte de la barre de message moyennant la conversion avec StringToMessageConverter
         private Message currentMsg { get; set; } = new Message();
         public Message CurrentMsg
         {
@@ -113,34 +116,21 @@ namespace WpfApplication2.ViewModel
                         currentMsg = value;
                         currentMsg.Sender = Name;
                         currentMsg.Target = CurrentInterlocutor.Name;
-                        //currentMsg.Target = "kasra";
                         currentMsg.SendTime = DateTime.Now.ToShortDateString();
-                        Console.WriteLine("changed current Msg ? : " + value.Body + " And Target is : " + currentMsg.Target);
+                        //Console.WriteLine("changed current Msg ? : " + value.Body + " And Target is : " + currentMsg.Target);
                         var list = new List<Message>();
 
-
-                        // ********** IGOR *******************************************************
                         if (client.ExchangedMessages.TryGetValue(CurrentInterlocutor.Name, out list))
                         {
-                            list.Add(currentMsg);
+                            list.Add(currentMsg); //On ajoute le message à la liste dans le dictionnaire correspondant à la conversation avec l'interlocuteur.
                         }
-                        // ==========================================================================
 
-                        CurrentMsgList.Add(new ObservableMessage { Body = value.Body, Target = value.Target, IsFromMe = true });
-                        //CurrentMsgList.Add(currentMsg);
-                        client.MessagesToSend.Enqueue(currentMsg);
-
-                        //******* IGOR ********************************************
-                        client.StoreMessage(currentMsg.Target, currentMsg);
-                        // ===============================================================
+                        CurrentMsgList.Add(new ObservableMessage { Body = value.Body, Target = value.Target, IsFromMe = true }); // Ajout à la liste d'affichage
+                        client.MessagesToSend.Enqueue(currentMsg); // Ajout à la liste de message à traiter par le serveur
+                        client.StoreMessage(currentMsg.Target, currentMsg); // AJout à la base de donnée
                     }
-
-
                 }
-
-
             }
-
         }
 
 
@@ -150,47 +140,21 @@ namespace WpfApplication2.ViewModel
         /// </summary>
         public MainViewModel()
         {
-            ////if (IsInDesignMode)
-            ////{
-            ////    // Code runs in Blend --> create design time data.
-            ////}
-            ////else
-            ////{
-            ////    // Code runs "for real"
-            ////}
-
-            /*MessageBoxResult result = MessageBox.Show("Do you want to close this window?", "Confirmation", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (result == MessageBoxResult.Yes)
-            {
-                //Application.Current.Shutdown();
-            }*/
-
-            StartAuthentification();
+            StartAuthentification(); //Lance la fenêtre d'authentification
 
             BindingOperations.EnableCollectionSynchronization(ConnectedUsers, verrou);
             BindingOperations.EnableCollectionSynchronization(CurrentMsgList, verrou2);
 
-            //Name = "Choroncos";
-            //WelcomeMsg = $"Bienvenue sur PtiChat, {Name}";
-
-
-            client.NewConnectedCustomer += Client_NewConnectedCustomer;
-            //var list = new List<string>(); list.Add("Joe"); list.Add("Jack"); list.Add("Averell");
-            /*client.ConnectedUsers.Add("Joe");
-            client.ConnectedUsers.Add("Jack");
-            client.ConnectedUsers.Add("Averell");*/
-
-            //client.ConnectedUsers = list;
-
+            //Connection des événements client aux méthodes à exécuter
+            client.NewConnectedCustomer += Client_NewConnectedCustomer;        
             client.ReceivedMessage += Client_ReceivedMessage;
-            /*client.OnReceivedMessage("Message pour Averell", "Averell");
-            client.OnReceivedMessage("Message pour Joe", "Joe");
-            client.OnReceivedMessage("Message pour Averell 2", "Averell");*/
 
-            client.StartChat();
-
+            //client.StartChat(); //Connecte le client avec le serveur.
         }
 
+        /// <summary>
+        /// Ouvre une fenêtre qui gère toutes les conditions liées à l'authentification 
+        /// </summary>
         private void StartAuthentification ()
         {
             var dialog = new MyDialog();
@@ -204,7 +168,6 @@ namespace WpfApplication2.ViewModel
                 else if (dialog.SignIn)
                 {
                     if (client.TryAuthentification(dialog.SignIn, dialog.SignInId_Result, dialog.SignInPw_Result))
-                    //if(true)
                     {
                         Name = dialog.SignInId_Result;
                         WelcomeMsg = $"Bienvenue sur PtiChat, {Name}";
@@ -216,7 +179,6 @@ namespace WpfApplication2.ViewModel
                 } else
                 {
                     if (client.TryAuthentification(dialog.SignIn, dialog.SignUpId_Result, dialog.SignUpPw_Result))
-                    //if (true)
                     {
                         Name = dialog.SignUpId_Result;
                         WelcomeMsg = $"Bienvenue sur PtiChat, {Name}";
@@ -230,45 +192,58 @@ namespace WpfApplication2.ViewModel
             }
         }
 
+        /// <summary>
+        /// Méthode appelée quand l'utilisateur reçoit un message d'un interlocuteur
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Client_ReceivedMessage(object sender, Client.MessageEventArgs e)
-        {
-            
-            if (CurrentInterlocutor.Name == e.Interlocutor)
+        { 
+            if (CurrentInterlocutor.Name == e.Interlocutor) // On ajoute le message à la liste de message si l'interlocuteur est l'interlocuteur courant.
             {
                 CurrentMsgList.Add(new ObservableMessage { Body = e.MessageContent, Target = e.Interlocutor, IsFromMe = client.Username == e.Sender });
-            } else
+            } else // Sinon on affiche une notification de nouveau message dans la liste des interlocuteurs.
             {
                ConnectedUsers.Single(i => i.Name == e.Interlocutor).HasSentANewMessage = true;
             }
-
         }
 
+        /// <summary>
+        /// Méthode appelée quand un interlocuteur se connecte ou se déconnecte.
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Client_NewConnectedCustomer(object sender, Client.UserEventArgs e)
         {
-            ConnectedUsers.Clear();
-            client.ConnectedUsers.ForEach(x => { ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true }); });
-            Console.WriteLine(ConnectedUsers.Count);
-            /*client.ConnectedUsers.ForEach(
+            if (ConnectedUsers.Count == 0) //lors de la connetion
+            {
+                //ConnectedUsers.Clear();
+                client.ConnectedUsers.ForEach(x => { ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true }); });
+                //Console.WriteLine(ConnectedUsers.Count);
+            } else
+            {
+                bool newConnection = false;
+                client.ConnectedUsers.ForEach(
                 x => {
-                   if (!ConnectedUsers.Any(i => { return (i.Name == x); } ))
+                    if (!ConnectedUsers.Any(i => { return (i.Name == x); }))
                     {
                         ConnectedUsers.Add(new ObservableClient { Name = x, HasSentANewMessage = true });
+                        newConnection = true;
+                    }
+                });
+
+                if (!newConnection)
+                {
+                    foreach (ObservableClient i in ConnectedUsers)
+                    {
+                        if (!client.ConnectedUsers.Contains(i.Name))
+                        {
+                            ConnectedUsers.Remove(i);
+                        }
                     }
                 }
-            );     
-
-            foreach (ObservableClient i in ConnectedUsers)
-            {
-                if (!client.ConnectedUsers.Contains(i.Name))
-                {
-                    ConnectedUsers.Remove(i);
-                }
-            }
-        
-            Console.WriteLine(ConnectedUsers.Count);*/
+                Console.WriteLine(ConnectedUsers.Count);
+            }     
         }
-
-        
-
     }
 }
